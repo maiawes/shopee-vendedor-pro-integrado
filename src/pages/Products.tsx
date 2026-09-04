@@ -1,99 +1,31 @@
 import { motion } from "framer-motion";
-import { Package, Search, Plus, Eye, Pencil, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Package, Search, Boxes } from "lucide-react";
+import { useMemo, useState } from "react";
+import { useFirebaseData } from "@/hooks/useFirebaseData";
 
-const products = [
-  { id: 1, name: "Fone Bluetooth TWS", sku: "FBT-001", category: "Eletrônicos", price: 25.9, status: "ativo" },
-  { id: 2, name: "Capinha iPhone 15", sku: "CIP-002", category: "Acessórios", price: 8.5, status: "ativo" },
-  { id: 3, name: "Carregador Turbo 65W", sku: "CT6-003", category: "Eletrônicos", price: 32.0, status: "ativo" },
-  { id: 4, name: "Película Galaxy S24", sku: "PGS-004", category: "Acessórios", price: 3.2, status: "inativo" },
-];
-
-const categories = ["Todas Categorias", "Eletrônicos", "Acessórios"];
+const BRL = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 export default function Products() {
+  const { products, isLoading, error } = useFirebaseData();
   const [search, setSearch] = useState("");
-  const [category, setCategory] = useState("Todas Categorias");
-
+  const [category, setCategory] = useState("Todas");
+  const categories = useMemo(() => ["Todas", ...Array.from(new Set(products.map((p) => p.category ?? "Geral"))).sort()], [products]);
   const filtered = products.filter((p) => {
-    const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku.toLowerCase().includes(search.toLowerCase());
-    const matchCat = category === "Todas Categorias" || p.category === category;
-    return matchSearch && matchCat;
+    const term = search.toLowerCase();
+    return (!term || p.name.toLowerCase().includes(term) || (p.sku ?? "").toLowerCase().includes(term)) && (category === "Todas" || (p.category ?? "Geral") === category);
   });
-
-  return (
-    <div className="space-y-6">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Produtos</h1>
-          <p className="text-sm text-muted-foreground mt-1">{filtered.length} produtos cadastrados</p>
-        </div>
-        <button className="btn-primary w-full sm:w-auto">
-          <Plus className="h-4 w-4" /> Novo Produto
-        </button>
-      </motion.div>
-
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nome ou SKU..."
-            className="input-pro pl-10"
-          />
-        </div>
-        <select
-          value={category}
-          onChange={(e) => setCategory(e.target.value)}
-          className="input-pro w-full sm:w-auto sm:min-w-[180px]"
-        >
-          {categories.map((c) => (
-            <option key={c} value={c}>{c}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="space-y-2.5">
-        {filtered.map((p, i) => (
-          <motion.div
-            key={p.id}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.05 }}
-            className="card-pro px-4 py-4 sm:px-5"
-          >
-            <div className="flex items-start gap-3 sm:items-center sm:gap-4">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/8">
-                <Package className="h-5 w-5 text-primary/70" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-card-foreground truncate">{p.name}</p>
-                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground mt-0.5">
-                      <span className="font-mono">{p.sku}</span>
-                      <span className="text-border">•</span>
-                      <span>{p.category}</span>
-                      <span className={`badge ${p.status === "ativo" ? "badge-success" : "badge-neutral"}`}>
-                        {p.status}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center justify-between sm:justify-end gap-4">
-                    <span className="text-sm font-bold text-card-foreground tabular-nums">R$ {p.price.toFixed(2).replace(".", ",")}</span>
-                    <div className="flex items-center gap-1.5 text-muted-foreground">
-                      <button className="rounded-md p-1.5 hover:bg-muted hover:text-foreground transition-colors"><Eye className="h-4 w-4" /></button>
-                      <button className="rounded-md p-1.5 hover:bg-muted hover:text-foreground transition-colors"><Pencil className="h-4 w-4" /></button>
-                      <button className="rounded-md p-1.5 hover:bg-destructive/10 hover:text-destructive transition-colors"><Trash2 className="h-4 w-4" /></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </motion.div>
-        ))}
-      </div>
+  const invested = products.reduce((sum, p) => sum + p.averageCost * Math.max(0, p.currentStock), 0);
+  return <div className="space-y-6">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}><h1 className="text-xl sm:text-2xl font-bold text-foreground">Produtos</h1><p className="text-sm text-muted-foreground mt-1">Catálogo sincronizado diretamente com o Firestore</p></motion.div>
+    <div className="grid gap-3 grid-cols-2 xl:grid-cols-3">
+      <div className="card-pro p-4"><p className="text-xs text-muted-foreground">Produtos ativos</p><p className="mt-1 text-2xl font-bold text-card-foreground">{products.filter(p => p.status !== "inactive").length}</p></div>
+      <div className="card-pro p-4"><p className="text-xs text-muted-foreground">Unidades em estoque</p><p className="mt-1 text-2xl font-bold text-card-foreground">{products.reduce((s, p) => s + Math.max(0, p.currentStock), 0)}</p></div>
+      <div className="card-pro p-4 col-span-2 xl:col-span-1"><p className="text-xs text-muted-foreground">Custo imobilizado</p><p className="mt-1 text-2xl font-bold text-card-foreground">{BRL(invested)}</p></div>
     </div>
-  );
+    <div className="flex flex-col gap-3 sm:flex-row"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome ou SKU..." className="input-pro pl-10" /></div><select value={category} onChange={(e) => setCategory(e.target.value)} className="input-pro w-full sm:w-auto sm:min-w-[180px]">{categories.map((c) => <option key={c}>{c}</option>)}</select></div>
+    {isLoading && <p className="text-sm text-muted-foreground">Carregando produtos do Firestore…</p>}
+    {error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">Não foi possível carregar os produtos. Confirme o login Firebase e as regras do Firestore.</p>}
+    <div className="space-y-2.5">{filtered.map((p, i) => <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.02 }} className="card-pro px-4 py-4 sm:px-5"><div className="flex items-start gap-3 sm:items-center sm:gap-4"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/8"><Package className="h-5 w-5 text-primary/70" /></div><div className="flex-1 min-w-0"><div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><div className="min-w-0"><p className="truncate text-sm font-semibold text-card-foreground">{p.name}</p><div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground"><span className="font-mono">{p.sku || "sem SKU"}</span><span>•</span><span>{p.brand || p.category || "Produto"}</span>{p.volume && <><span>•</span><span>{p.volume}</span></>}<span className="badge badge-success">{p.currentStock} em estoque</span></div></div><div className="flex items-center gap-5 text-right"><div><p className="text-[11px] text-muted-foreground">Custo</p><p className="text-sm font-bold text-card-foreground">{BRL(p.averageCost)}</p></div><div><p className="text-[11px] text-muted-foreground">Preço sugerido</p><p className="text-sm font-bold text-primary">{BRL(p.suggestedPrice)}</p></div></div></div></div></div></motion.div>)}{!isLoading && !error && filtered.length === 0 && <div className="card-pro p-8 text-center text-sm text-muted-foreground"><Boxes className="mx-auto mb-2 h-6 w-6" />Nenhum produto encontrado.</div>}</div>
+  </div>;
 }
+

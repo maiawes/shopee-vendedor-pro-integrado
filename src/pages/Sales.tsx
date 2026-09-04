@@ -1,76 +1,22 @@
 import { motion } from "framer-motion";
-import StatCard from "@/components/StatCard";
-import { ShoppingCart, DollarSign, TrendingUp, Package } from "lucide-react";
+import { DollarSign } from "lucide-react";
+import { useFirebaseData } from "@/hooks/useFirebaseData";
 
-const sales = [
-  { id: 1, date: "2026-03-28", product: "Fone Bluetooth TWS", qty: 5, price: 89.9, total: 449.5 },
-  { id: 2, date: "2026-03-27", product: "Carregador Turbo 65W", qty: 3, price: 129.9, total: 389.7 },
-  { id: 3, date: "2026-03-26", product: "Capa iPhone 15 Pro", qty: 12, price: 49.9, total: 598.8 },
-  { id: 4, date: "2026-03-25", product: "Smartwatch D20", qty: 4, price: 79.9, total: 319.6 },
-  { id: 5, date: "2026-03-24", product: "Película Cerâmica", qty: 20, price: 24.9, total: 498.0 },
-];
+const BRL = (value: number) => value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const date = (value: string) => new Date(value).toLocaleDateString("pt-BR");
 
 export default function Sales() {
-  return (
-    <div className="space-y-6">
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-        <h1 className="text-xl sm:text-2xl font-bold text-foreground">Vendas</h1>
-        <p className="text-sm text-muted-foreground mt-1">Histórico de vendas e métricas</p>
-      </motion.div>
-
-      <div className="grid gap-3 grid-cols-2 xl:grid-cols-4">
-        <StatCard title="Unidades Vendidas" value="44" icon={Package} index={0} />
-        <StatCard title="Receita Total" value="R$ 2.255,60" icon={DollarSign} index={1} />
-        <StatCard title="Custo Total" value="R$ 987,00" icon={TrendingUp} index={2} />
-        <StatCard title="Lucro Líquido" value="R$ 1.268,60" change="56.2% margem" changeType="positive" icon={DollarSign} index={3} />
-      </div>
-
-      {/* Mobile: card layout / Desktop: table */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-        {/* Desktop table */}
-        <div className="hidden md:block card-static overflow-hidden">
-          <table className="table-pro">
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Produto</th>
-                <th className="text-right">Qtd</th>
-                <th className="text-right">Preço Unit.</th>
-                <th className="text-right">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sales.map((s) => (
-                <tr key={s.id}>
-                  <td className="text-muted-foreground tabular-nums">{new Date(s.date).toLocaleDateString("pt-BR")}</td>
-                  <td className="font-medium text-card-foreground">{s.product}</td>
-                  <td className="text-right text-muted-foreground tabular-nums">{s.qty}</td>
-                  <td className="text-right text-muted-foreground tabular-nums">R$ {s.price.toFixed(2)}</td>
-                  <td className="text-right font-semibold text-card-foreground tabular-nums">R$ {s.total.toFixed(2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* Mobile cards */}
-        <div className="md:hidden space-y-3">
-          {sales.map((s, i) => (
-            <motion.div key={s.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
-              className="card-pro p-4">
-              <div className="flex items-start justify-between mb-2">
-                <p className="text-sm font-semibold text-card-foreground">{s.product}</p>
-                <span className="text-sm font-bold text-card-foreground tabular-nums">R$ {s.total.toFixed(2)}</span>
-              </div>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                <span className="tabular-nums">{new Date(s.date).toLocaleDateString("pt-BR")}</span>
-                <span className="text-border">•</span>
-                <span>{s.qty} un × R$ {s.price.toFixed(2)}</span>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-    </div>
-  );
+  const { sales, isLoading, error } = useFirebaseData();
+  const active = sales.filter((s) => s.status !== "canceled");
+  const units = active.reduce((sum, s) => sum + s.items.reduce((n, i) => n + i.quantity, 0), 0);
+  const revenue = active.reduce((sum, s) => sum + s.total, 0);
+  const profit = active.reduce((sum, s) => sum + s.grossProfit, 0);
+  return <div className="space-y-6">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}><h1 className="text-xl sm:text-2xl font-bold text-foreground">Vendas</h1><p className="text-sm text-muted-foreground mt-1">Histórico real sincronizado com o Firestore</p></motion.div>
+    <div className="grid gap-3 grid-cols-2 xl:grid-cols-4"><div className="card-pro p-4"><p className="text-xs text-muted-foreground">Unidades vendidas</p><p className="mt-1 text-2xl font-bold text-card-foreground">{units}</p></div><div className="card-pro p-4"><p className="text-xs text-muted-foreground">Receita total</p><p className="mt-1 text-2xl font-bold text-card-foreground">{BRL(revenue)}</p></div><div className="card-pro p-4"><p className="text-xs text-muted-foreground">Lucro bruto</p><p className="mt-1 text-2xl font-bold text-emerald-400">{BRL(profit)}</p></div><div className="card-pro p-4"><p className="text-xs text-muted-foreground">Pedidos ativos</p><p className="mt-1 text-2xl font-bold text-card-foreground">{active.length}</p></div></div>
+    {isLoading && <p className="text-sm text-muted-foreground">Carregando vendas do Firestore…</p>}
+    {error && <p className="rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">Não foi possível carregar as vendas.</p>}
+    <div className="card-static overflow-x-auto"><table className="table-pro min-w-[850px]"><thead><tr><th>Data</th><th>Cliente</th><th>Produtos</th><th className="text-right">Total</th><th className="text-right">CMV</th><th className="text-right">Taxa Shopee</th><th className="text-right">Lucro</th><th>Status</th></tr></thead><tbody>{sales.map((s) => <tr key={s.id}><td className="text-muted-foreground">{date(s.date)}</td><td className="font-medium text-card-foreground">{s.customerName}</td><td className="text-muted-foreground">{s.items.reduce((n, i) => n + i.quantity, 0)} un. · {s.items.map(i => i.productName).join(", ")}</td><td className="text-right font-semibold">{BRL(s.total)}</td><td className="text-right text-muted-foreground">{BRL(s.costOfGoods)}</td><td className="text-right text-muted-foreground">{BRL(s.shopeeFee ?? 0)}</td><td className={`text-right font-semibold ${s.grossProfit >= 0 ? "text-emerald-400" : "text-rose-400"}`}>{BRL(s.grossProfit)}</td><td><span className={`badge ${s.status === "canceled" ? "badge-neutral" : "badge-success"}`}>{s.status === "canceled" ? "Cancelada" : s.status === "installments" ? "Parcelada" : s.status === "pending" ? "Pendente" : "Paga"}</span></td></tr>)}{!isLoading && sales.length === 0 && <tr><td colSpan={8} className="py-10 text-center text-muted-foreground"><DollarSign className="mx-auto mb-2 h-6 w-6" />Nenhuma venda encontrada.</td></tr>}</tbody></table></div>
+  </div>;
 }
+

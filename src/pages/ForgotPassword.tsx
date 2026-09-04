@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { firebaseAuth } from "@/integrations/firebase/client";
 import { ArrowLeft, ArrowRight, TrendingUp, Package, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
@@ -21,13 +22,13 @@ export default function ForgotPassword() {
     setError("");
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
+      await sendPasswordResetEmail(firebaseAuth, email.trim().toLowerCase(), {
+        url: `${window.location.origin}/auth`,
+        handleCodeInApp: false,
       });
-      if (error) throw error;
       setSent(true);
     } catch (err: any) {
-      setError(err.message || "Ocorreu um erro");
+      setError(err?.code === "auth/user-not-found" ? "Não encontramos uma conta com este e-mail." : "Não foi possível enviar o email de recuperação.");
     } finally {
       setLoading(false);
     }

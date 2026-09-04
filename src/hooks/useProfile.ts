@@ -1,9 +1,7 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 
 export interface UserProfile {
-  id?: string;
   user_id: string;
   full_name: string | null;
   store_name: string | null;
@@ -13,96 +11,42 @@ export interface UserProfile {
   stock_alert_threshold: number;
   meta_pares_mes: number;
   meta_receita_mes: number;
-  updated_at?: string;
 }
 
-const DEFAULTS: Omit<UserProfile, "user_id"> = {
-  full_name: null,
-  store_name: null,
-  avatar_url: null,
-  shopee_commission: 14,
-  target_margin: 30,
-  stock_alert_threshold: 3,
-  meta_pares_mes: 0,
-  meta_receita_mes: 0,
-};
+const DEFAULTS = { full_name: null, store_name: null, avatar_url: null, shopee_commission: 14, target_margin: 30, stock_alert_threshold: 3, meta_pares_mes: 0, meta_receita_mes: 0 };
+
+function storageKey(userId: string) { return `seller-pro-profile-${userId}`; }
 
 export function useProfile() {
   const { user } = useAuth();
   const queryClient = useQueryClient();
-
   const query = useQuery<UserProfile>({
-    queryKey: ["profile", user?.id],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("user_id", user!.id)
-        .maybeSingle();
-
-      if (error) throw error;
-
-      if (!data) {
-        return {
-          ...DEFAULTS,
-          user_id: user!.id,
-          full_name: (user?.user_metadata?.full_name as string) ?? null,
-          store_name: (user?.user_metadata?.store_name as string) ?? null,
-        };
-      }
-
-      return {
-        ...DEFAULTS,
-        ...data,
-        shopee_commission: Number(data.shopee_commission ?? DEFAULTS.shopee_commission),
-        target_margin: Number(data.target_margin ?? DEFAULTS.target_margin),
-        stock_alert_threshold: Number(data.stock_alert_threshold ?? DEFAULTS.stock_alert_threshold),
-        meta_pares_mes: Number(data.meta_pares_mes ?? 0),
-        meta_receita_mes: Number(data.meta_receita_mes ?? 0),
-      } as UserProfile;
-    },
+    queryKey: ["firebase-profile", user?.id],
     enabled: !!user,
+    queryFn: async () => {
+      const saved = localStorage.getItem(storageKey(user!.id));
+      const local = saved ? JSON.parse(saved) as Partial<UserProfile> : {};
+      return { ...DEFAULTS, user_id: user!.id, full_name: (local.full_name ?? user?.user_metadata?.full_name ?? null) as string | null, store_name: (local.store_name ?? null) as string | null, ...local };
+    },
   });
 
   const updateProfile = useMutation({
-    mutationFn: async (updates: Partial<Omit<UserProfile, "user_id" | "id">>) => {
-      const { error } = await supabase.from("profiles").upsert(
-        { user_id: user!.id, ...updates, updated_at: new Date().toISOString() },
-        { onConflict: "user_id" },
-      );
-      if (error) throw error;
+    mutationFn: async (updates: Partial<UserProfile>) => {
+      const current = query.data ?? { ...DEFAULTS, user_id: user!.id };
+      localStorage.setItem(storageKey(user!.id), JSON.stringify({ ...current, ...updates }));
     },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["profile"] }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["firebase-profile", user?.id] }),
   });
 
   const uploadAvatar = useMutation({
-    mutationFn: async (file: File) => {
-      const ext = file.name.split(".").pop() ?? "jpg";
-      const path = `${user!.id}/avatar.${ext}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from("avatars")
-        .upload(path, file, { upsert: true, contentType: file.type });
-
-      if (uploadError) throw uploadError;
-
-      const { data } = supabase.storage.from("avatars").getPublicUrl(path);
-      const url = `${data.publicUrl}?t=${Date.now()}`;
-
-      await supabase.from("profiles").upsert(
-        { user_id: user!.id, avatar_url: url, updated_at: new Date().toISOString() },
-        { onConflict: "user_id" },
-      );
-
-      return url;
-    },
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["profile"] }),
+    mutationFn: async (file: File) => new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
+      reader.readAsDataURL(file);
+    }),
+    onSuccess: async (avatar_url) => updateProfile.mutateAsync({ avatar_url }),
   });
 
-  return {
-    profile: query.data,
-    isLoading: query.isLoading,
-    updateProfile,
-    uploadAvatar,
-  };
+  return { profile: query.data, isLoading: query.isLoading, updateProfile, uploadAvatar };
 }

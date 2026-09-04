@@ -2,9 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
-  Bell, X, AlertTriangle, Package, Boxes, CheckCheck, ChevronRight,
+  Bell, X, AlertTriangle, Package, CheckCheck, ChevronRight,
 } from "lucide-react";
-import { useEstoqueData, SIZES } from "@/hooks/useEstoque";
 import { useProdutos } from "@/hooks/useProdutos";
 import { useProfile } from "@/hooks/useProfile";
 
@@ -17,28 +16,11 @@ interface Notif {
 }
 
 function buildNotifs(
-  stockMap: Record<number, number>,
   threshold: number,
   alertas: ReturnType<typeof useProdutos>["alertas"],
   dismissed: Set<string>,
 ): Notif[] {
   const list: Notif[] = [];
-
-  for (const size of SIZES) {
-    const qty = stockMap[size] ?? 0;
-    if (qty > 0 && qty <= threshold) {
-      const id = `palmilha-${size}`;
-      if (!dismissed.has(id)) {
-        list.push({
-          id,
-          tipo: "palmilha",
-          titulo: `Palmilha Nº ${size} com estoque baixo`,
-          desc: `Apenas ${qty} par${qty !== 1 ? "es" : ""} disponível${qty !== 1 ? "is" : ""}`,
-          to: "/estoque",
-        });
-      }
-    }
-  }
 
   for (const p of alertas) {
     const id = `produto-${p.id}`;
@@ -64,7 +46,6 @@ interface Props {
 
 export default function NotificationsPanel({ open, onClose, onCountChange }: Props) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const { stats } = useEstoqueData();
   const { alertas } = useProdutos();
   const { profile } = useProfile();
   const threshold = profile?.stock_alert_threshold ?? 3;
@@ -76,7 +57,7 @@ export default function NotificationsPanel({ open, onClose, onCountChange }: Pro
     } catch { return new Set(); }
   });
 
-  const notifs = buildNotifs(stats.stockMap, threshold, alertas, dismissed);
+  const notifs = buildNotifs(threshold, alertas, dismissed);
 
   useEffect(() => { onCountChange(notifs.length); }, [notifs.length]);
 
@@ -154,9 +135,7 @@ export default function NotificationsPanel({ open, onClose, onCountChange }: Pro
                 {notifs.map((n) => (
                   <div key={n.id} className="group flex items-start gap-3 px-4 py-3 hover:bg-muted/40 transition-colors">
                     <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${n.tipo === "palmilha" ? "bg-amber-500/10" : "bg-blue-500/10"}`}>
-                      {n.tipo === "palmilha"
-                        ? <Boxes className="h-4 w-4 text-amber-500" />
-                        : <Package className="h-4 w-4 text-blue-500" />}
+                      <Package className="h-4 w-4 text-blue-500" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-semibold text-card-foreground leading-snug">{n.titulo}</p>

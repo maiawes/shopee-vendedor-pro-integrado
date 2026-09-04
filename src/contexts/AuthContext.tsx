@@ -1,10 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import type { User, Session } from "@supabase/supabase-js";
+import { onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
+import { firebaseAuth } from "@/integrations/firebase/client";
+
+export interface AppUser {
+  id: string;
+  email: string | null;
+  email_confirmed_at?: string | null;
+  user_metadata?: Record<string, unknown>;
+}
 
 interface AuthContextType {
-  user: User | null;
-  session: Session | null;
+  user: AppUser | null;
+  session: AppUser | null;
   loading: boolean;
   signOut: () => Promise<void>;
 }
@@ -17,28 +24,26 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AppUser | null>(null);
+  const [session, setSession] = useState<AppUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-      setUser(session?.user ?? null);
+    return onAuthStateChanged(firebaseAuth, (firebaseUser) => {
+      const next = firebaseUser ? {
+        id: firebaseUser.uid,
+        email: firebaseUser.email,
+        email_confirmed_at: firebaseUser.emailVerified ? (firebaseUser.metadata.creationTime ?? null) : null,
+        user_metadata: { full_name: firebaseUser.displayName ?? "" },
+      } : null;
+      setSession(next);
+      setUser(next);
       setLoading(false);
     });
-
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
   }, []);
 
   const signOut = async () => {
-    await supabase.auth.signOut();
+    await firebaseSignOut(firebaseAuth);
   };
 
   return (

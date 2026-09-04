@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
+import { createUserWithEmailAndPassword, signInWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { firebaseAuth } from "@/integrations/firebase/client";
 import { ArrowRight, Eye, EyeOff, TrendingUp, Package, ShieldCheck } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useNavigate, Link } from "react-router-dom";
@@ -35,23 +36,26 @@ export default function Auth() {
     setLoading(true);
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
+        await signInWithEmailAndPassword(firebaseAuth, email.trim().toLowerCase(), password);
         navigate("/");
       } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-          options: {
-            data: { full_name: fullName, store_name: storeName },
-            emailRedirectTo: window.location.origin,
-          },
-        });
-        if (error) throw error;
-        setSuccess("Conta criada! Verifique seu email para confirmar o cadastro.");
+        const credential = await createUserWithEmailAndPassword(firebaseAuth, email.trim().toLowerCase(), password);
+        if (fullName.trim()) await updateProfile(credential.user, { displayName: fullName.trim() });
+        setSuccess("Conta criada com sucesso. Seus dados do Firestore serão carregados ao entrar.");
       }
     } catch (err: any) {
-      setError(err.message || "Ocorreu um erro");
+      const code = String(err?.code ?? "");
+      const messages: Record<string, string> = {
+        "auth/invalid-credential": "E-mail ou senha incorretos.",
+        "auth/invalid-login-credentials": "E-mail ou senha incorretos.",
+        "auth/user-not-found": "E-mail ou senha incorretos.",
+        "auth/wrong-password": "E-mail ou senha incorretos.",
+        "auth/email-already-in-use": "Este e-mail já possui uma conta.",
+        "auth/invalid-email": "Informe um e-mail válido.",
+        "auth/weak-password": "Use uma senha mais forte, com pelo menos 6 caracteres.",
+        "auth/network-request-failed": "Falha de conexão com o Firebase.",
+      };
+      setError(messages[code] ?? "Não foi possível autenticar. Tente novamente.");
     } finally {
       setLoading(false);
     }
