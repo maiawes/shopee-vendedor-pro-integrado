@@ -2,10 +2,10 @@ import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
-// Firebase web configuration is public by design. Security is enforced by
-// Firebase Authentication and the Firestore rules (ownerId == auth.uid).
+// The browser key is supplied through an ignored local/CI environment file.
+// Access is additionally restricted to the authorized application domains.
 const firebaseConfig = {
-  apiKey: "AIzaSyAsUNQ7MhAnxGmQSPBUcnBxsIK4LZvWq7Y",
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "perfumecontrol-maia-2026.firebaseapp.com",
   projectId: "perfumecontrol-maia-2026",
   storageBucket: "perfumecontrol-maia-2026.firebasestorage.app",
