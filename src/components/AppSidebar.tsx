@@ -5,6 +5,7 @@ import {
   Factory,
   Calculator,
   ShoppingCart,
+  Code2,
   Megaphone,
   DollarSign,
   Boxes,
@@ -25,6 +26,7 @@ const links = [
   { to: "/fornecedores", label: "Fornecedores", icon: Factory },
   { to: "/calculadora", label: "Calculadora", icon: Calculator },
   { to: "/vendas", label: "Vendas", icon: ShoppingCart },
+  { to: "/servicos", label: "Serviços", icon: Code2 },
   { to: "/anuncios", label: "Anúncios", icon: Megaphone },
   { to: "/financeiro", label: "Financeiro", icon: DollarSign },
 ];

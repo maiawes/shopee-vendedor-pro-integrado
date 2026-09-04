@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { collection, doc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { collection, doc, getDocs, query, setDoc, where, writeBatch } from "firebase/firestore";
 import { useQueryClient } from "@tanstack/react-query";
 import { firebaseDb } from "@/integrations/firebase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -36,8 +36,10 @@ export interface FirebaseSaleItem {
 
 export interface FirebaseSale {
   id: string;
+  saleType?: "product" | "service" | string;
   date: string;
   customerName?: string;
+  serviceDescription?: string;
   items: FirebaseSaleItem[];
   total: number;
   costOfGoods: number;
@@ -127,6 +129,18 @@ export interface FirebaseBankTransaction {
   createdAt: string;
 }
 
+export interface FirebaseServiceSale {
+  id: string;
+  date: string;
+  clientName: string;
+  description: string;
+  amount: number;
+  status: "paid" | "pending" | "canceled" | string;
+  paymentMethod?: string;
+  accountId?: string;
+  createdAt: string;
+}
+
 export interface FirebaseData {
   products: FirebaseProduct[];
   sales: FirebaseSale[];
@@ -137,10 +151,11 @@ export interface FirebaseData {
   payments: FirebasePayment[];
   bankAccounts: FirebaseBankAccount[];
   bankTransactions: FirebaseBankTransaction[];
+  serviceSales: FirebaseServiceSale[];
 }
 
 const EMPTY_DATA: FirebaseData = {
-  products: [], sales: [], purchases: [], stockMovements: [], suppliers: [], expenses: [], payments: [], bankAccounts: [], bankTransactions: [],
+  products: [], sales: [], purchases: [], stockMovements: [], suppliers: [], expenses: [], payments: [], bankAccounts: [], bankTransactions: [], serviceSales: [],
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -194,8 +209,10 @@ function normalizeProducts(rows: Array<Record<string, unknown>>): FirebaseProduc
 function normalizeSales(rows: Array<Record<string, unknown>>): FirebaseSale[] {
   return rows.map((row) => ({
     id: String(row.id),
+    saleType: row.saleType ? String(row.saleType) : "product",
     date: row.date ? toIso(row.date) : toIso(row.createdAt),
     customerName: row.customerName ? String(row.customerName) : "Consumidor final",
+    serviceDescription: row.serviceDescription ? String(row.serviceDescription) : undefined,
     items: Array.isArray(row.items) ? row.items.map((item) => {
       const data = (item ?? {}) as Record<string, unknown>;
       return {
@@ -303,6 +320,20 @@ function normalizeBankTransactions(rows: Array<Record<string, unknown>>): Fireba
   }));
 }
 
+function normalizeServiceSales(rows: FirebaseSale[]): FirebaseServiceSale[] {
+  return rows.map((row) => ({
+    id: String(row.id),
+    date: toDateOnly(row.date, row.createdAt),
+    clientName: String(row.customerName ?? "Cliente avulso"),
+    description: String(row.serviceDescription ?? "Serviço de desenvolvimento de software"),
+    amount: toNumber(row.total),
+    status: String(row.status ?? "paid"),
+    paymentMethod: row.paymentMethod,
+    accountId: row.accountId,
+    createdAt: toIso(row.createdAt),
+  })).filter((row) => rows.find((sale) => sale.id === row.id)?.saleType === "service");
+}
+
 async function fetchData(userId: string): Promise<FirebaseData> {
   const [products, sales, purchases, stockMovements, suppliers, expenses, payments, bankAccounts, bankTransactions] = await Promise.all([
     listOwned<Record<string, unknown>>("products", userId),
@@ -315,9 +346,10 @@ async function fetchData(userId: string): Promise<FirebaseData> {
     listOwned<Record<string, unknown>>("bankAccounts", userId),
     listOwned<Record<string, unknown>>("bankTransactions", userId),
   ]);
+  const normalizedSales = normalizeSales(sales);
   return {
     products: normalizeProducts(products),
-    sales: normalizeSales(sales).sort((a, b) => b.date.localeCompare(a.date)),
+    sales: normalizedSales.filter((sale) => sale.saleType !== "service").sort((a, b) => b.date.localeCompare(a.date)),
     purchases: normalizePurchases(purchases).sort((a, b) => String(b.date).localeCompare(String(a.date))),
     stockMovements: normalizeMovements(stockMovements).sort((a, b) => b.date.localeCompare(a.date)),
     suppliers: normalizeSuppliers(suppliers).sort((a, b) => a.name.localeCompare(b.name)),
@@ -325,6 +357,7 @@ async function fetchData(userId: string): Promise<FirebaseData> {
     payments: normalizePayments(payments).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
     bankAccounts: normalizeBankAccounts(bankAccounts).sort((a, b) => a.name.localeCompare(b.name)),
     bankTransactions: normalizeBankTransactions(bankTransactions).sort((a, b) => b.date.localeCompare(a.date)),
+    serviceSales: normalizeServiceSales(normalizedSales).sort((a, b) => b.date.localeCompare(a.date)),
   };
 }
 
@@ -360,8 +393,36 @@ export function useFirebaseData() {
   }
 
   async function markPaymentAsPaid(paymentId: string, accountId: string) {
-    await requireUser();
-    await updateDoc(doc(firebaseDb, "payments", paymentId), { status: "paid", paidAt: new Date().toISOString(), accountId });
+    const currentUser = await requireUser();
+    const payment = query.data?.payments.find((item) => item.id === paymentId);
+    const paidAt = new Date().toISOString();
+    const batch = writeBatch(firebaseDb);
+    batch.update(doc(firebaseDb, "payments", paymentId), { status: "paid", paidAt, accountId });
+    if (payment?.source === "service" && payment.sourceId) {
+      const service = query.data?.serviceSales.find((item) => item.id === payment.sourceId);
+      batch.update(doc(firebaseDb, "sales", payment.sourceId), { status: "paid", accountId });
+      const transactionId = `service-transaction-${payment.sourceId}`;
+      batch.set(doc(firebaseDb, "bankTransactions", transactionId), { id: transactionId, accountId, type: "deposit", amount: payment.amount, description: `Serviço · ${service?.clientName ?? payment.description}`, date: paidAt.slice(0, 10), createdAt: paidAt, ownerId: currentUser.id });
+    }
+    await batch.commit();
+    await refresh();
+  }
+
+  async function createServiceSale(input: { date: string; clientName: string; description: string; amount: number; status: "paid" | "pending"; paymentMethod: string; accountId?: string }) {
+    const currentUser = await requireUser();
+    const saleId = `service-sale-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = new Date().toISOString();
+    const batch = writeBatch(firebaseDb);
+    batch.set(doc(firebaseDb, "sales", saleId), { id: saleId, saleType: "service", date: input.date, customerName: input.clientName.trim(), serviceDescription: input.description.trim(), items: [], discount: 0, linkedCosts: 0, packagingCost: 0, shopeeFee: 0, total: input.amount, costOfGoods: 0, grossProfit: input.amount, margin: 100, paymentMethod: input.paymentMethod, status: input.status, ...(input.accountId ? { accountId: input.accountId } : {}), createdAt: now, ownerId: currentUser.id });
+    if (input.status === "paid" && input.accountId) {
+      const transactionId = `service-transaction-${saleId}`;
+      batch.set(doc(firebaseDb, "bankTransactions", transactionId), { id: transactionId, accountId: input.accountId, type: "deposit", amount: input.amount, description: `Serviço · ${input.clientName.trim()}`, date: input.date, createdAt: now, ownerId: currentUser.id });
+    }
+    if (input.status === "pending") {
+      const paymentId = `service-payment-${saleId}`;
+      batch.set(doc(firebaseDb, "payments", paymentId), { id: paymentId, type: "receivable", source: "service", sourceId: saleId, description: `Serviço · ${input.clientName.trim()} · ${input.description.trim()}`, amount: input.amount, dueDate: input.date, status: "pending", method: input.paymentMethod, ownerId: currentUser.id });
+    }
+    await batch.commit();
     await refresh();
   }
 
@@ -373,5 +434,6 @@ export function useFirebaseData() {
     createBankAccount,
     createBankTransaction,
     markPaymentAsPaid,
+    createServiceSale,
   };
 }

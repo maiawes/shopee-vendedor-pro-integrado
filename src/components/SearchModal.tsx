@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import {
   Search, X, LayoutDashboard, Boxes, Package, Factory,
   Calculator, ShoppingCart, Megaphone, DollarSign, Settings,
+  Code2,
   ArrowRight, Tag,
 } from "lucide-react";
 import { useProdutos } from "@/hooks/useProdutos";
@@ -15,6 +16,7 @@ const PAGES = [
   { label: "Calculadora",    to: "/calculadora",    icon: Calculator,      desc: "Precificação inteligente" },
   { label: "Fornecedores",   to: "/fornecedores",   icon: Factory,         desc: "Gestão de fornecedores" },
   { label: "Vendas",         to: "/vendas",         icon: ShoppingCart,    desc: "Histórico de pedidos" },
+  { label: "Serviços",       to: "/servicos",       icon: Code2,           desc: "Vendas de desenvolvimento" },
   { label: "Anúncios",       to: "/anuncios",       icon: Megaphone,       desc: "Campanhas e ADS" },
   { label: "Financeiro",     to: "/financeiro",     icon: DollarSign,      desc: "P&L e relatórios" },
   { label: "Configurações",  to: "/configuracoes",  icon: Settings,        desc: "Perfil e preferências" },

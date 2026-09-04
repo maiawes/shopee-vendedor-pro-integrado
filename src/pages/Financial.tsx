@@ -41,7 +41,7 @@ function paymentMethodLabel(method?: string) {
 }
 
 export default function Financial() {
-  const { products, sales, purchases, expenses, payments, bankAccounts, bankTransactions, isLoading, error, createBankAccount, createBankTransaction, markPaymentAsPaid } = useFirebaseData();
+  const { products, sales, purchases, expenses, payments, bankAccounts, bankTransactions, serviceSales, isLoading, error, createBankAccount, createBankTransaction, markPaymentAsPaid } = useFirebaseData();
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
   const [selectedPaymentAccounts, setSelectedPaymentAccounts] = useState<Record<string, string>>({});
   const [newAccountName, setNewAccountName] = useState("");
@@ -57,7 +57,7 @@ export default function Financial() {
   const pendingPayables = useMemo(() => payments.filter((payment) => payment.type === "payable" && payment.status !== "paid"), [payments]);
 
   const metrics = useMemo(() => {
-    const revenue = validSales.reduce((sum, sale) => sum + sale.total, 0);
+    const revenue = validSales.reduce((sum, sale) => sum + sale.total, 0) + serviceSales.filter((sale) => sale.status !== "canceled").reduce((sum, sale) => sum + sale.amount, 0);
     const cogs = validSales.reduce((sum, sale) => sum + sale.costOfGoods + (sale.packagingCost ?? 0) + (sale.linkedCosts ?? 0), 0);
     const shopeeFees = validSales.reduce((sum, sale) => sum + (sale.shopeeFee ?? 0), 0);
     const expensesTotal = expenses.reduce((sum, expense) => sum + expense.amount, 0);
@@ -65,7 +65,7 @@ export default function Financial() {
     const payable = pendingPayables.reduce((sum, payment) => sum + payment.amount, 0);
     const gross = revenue - cogs - shopeeFees;
     return { revenue, cogs, shopeeFees, expensesTotal, gross, net: gross - expensesTotal, margin: revenue ? (gross / revenue) * 100 : 0, receivable, payable };
-  }, [expenses, pendingPayables, pendingReceivables, validSales]);
+  }, [expenses, pendingPayables, pendingReceivables, serviceSales, validSales]);
 
   const accountBalance = (accountId: string) => {
     const account = bankAccounts.find((item) => item.id === accountId);
