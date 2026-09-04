@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDocs, query, setDoc, updateDoc, where } from "firebase/firestore";
+import { useQueryClient } from "@tanstack/react-query";
 import { firebaseDb } from "@/integrations/firebase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -329,11 +330,48 @@ async function fetchData(userId: string): Promise<FirebaseData> {
 
 export function useFirebaseData() {
   const { user } = useAuth();
+  const queryClient = useQueryClient();
   const query = useQuery({
     queryKey: ["firebase-data", user?.id],
     queryFn: () => fetchData(user!.id),
     enabled: !!user,
     staleTime: 30_000,
   });
-  return { ...(query.data ?? EMPTY_DATA), isLoading: query.isLoading, error: query.error, refetch: query.refetch };
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["firebase-data", user?.id] });
+
+  async function requireUser() {
+    if (!user) throw new Error("Faça login para alterar os dados financeiros.");
+    return user;
+  }
+
+  async function createBankAccount(name: string, initialBalance: number) {
+    const currentUser = await requireUser();
+    const id = `bank-account-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await setDoc(doc(firebaseDb, "bankAccounts", id), { id, name: name.trim(), initialBalance, createdAt: new Date().toISOString(), ownerId: currentUser.id });
+    await refresh();
+  }
+
+  async function createBankTransaction(accountId: string, type: "deposit" | "withdrawal", amount: number, description: string, date: string) {
+    const currentUser = await requireUser();
+    const id = `bank-transaction-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    await setDoc(doc(firebaseDb, "bankTransactions", id), { id, accountId, type, amount, description: description.trim(), date, createdAt: new Date().toISOString(), ownerId: currentUser.id });
+    await refresh();
+  }
+
+  async function markPaymentAsPaid(paymentId: string, accountId: string) {
+    await requireUser();
+    await updateDoc(doc(firebaseDb, "payments", paymentId), { status: "paid", paidAt: new Date().toISOString(), accountId });
+    await refresh();
+  }
+
+  return {
+    ...(query.data ?? EMPTY_DATA),
+    isLoading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+    createBankAccount,
+    createBankTransaction,
+    markPaymentAsPaid,
+  };
 }
