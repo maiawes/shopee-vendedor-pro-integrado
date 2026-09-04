@@ -95,6 +95,37 @@ export interface FirebaseExpense {
   status?: string;
 }
 
+export interface FirebasePayment {
+  id: string;
+  type: "receivable" | "payable";
+  source?: "sale" | "purchase" | "expense" | string;
+  sourceId?: string;
+  description: string;
+  amount: number;
+  dueDate: string;
+  paidAt?: string;
+  accountId?: string;
+  status: "paid" | "pending" | "overdue" | string;
+  method?: string;
+}
+
+export interface FirebaseBankAccount {
+  id: string;
+  name: string;
+  initialBalance: number;
+  createdAt: string;
+}
+
+export interface FirebaseBankTransaction {
+  id: string;
+  accountId: string;
+  date: string;
+  type: "deposit" | "withdrawal" | string;
+  amount: number;
+  description: string;
+  createdAt: string;
+}
+
 export interface FirebaseData {
   products: FirebaseProduct[];
   sales: FirebaseSale[];
@@ -102,10 +133,13 @@ export interface FirebaseData {
   stockMovements: FirebaseStockMovement[];
   suppliers: FirebaseSupplier[];
   expenses: FirebaseExpense[];
+  payments: FirebasePayment[];
+  bankAccounts: FirebaseBankAccount[];
+  bankTransactions: FirebaseBankTransaction[];
 }
 
 const EMPTY_DATA: FirebaseData = {
-  products: [], sales: [], purchases: [], stockMovements: [], suppliers: [], expenses: [],
+  products: [], sales: [], purchases: [], stockMovements: [], suppliers: [], expenses: [], payments: [], bankAccounts: [], bankTransactions: [],
 };
 
 function toNumber(value: unknown, fallback = 0): number {
@@ -119,6 +153,11 @@ function toIso(value: unknown): string {
     return value.toDate().toISOString();
   }
   return new Date(0).toISOString();
+}
+
+function toDateOnly(value: unknown, fallback?: unknown): string {
+  if (typeof value === "string" && value.length >= 10) return value.slice(0, 10);
+  return toIso(value ?? fallback).slice(0, 10);
 }
 
 function normalizeDoc<T extends Record<string, unknown>>(id: string, raw: Record<string, unknown>): T {
@@ -226,14 +265,54 @@ function normalizeExpenses(rows: Array<Record<string, unknown>>): FirebaseExpens
   return rows.map((row) => ({ id: String(row.id), date: row.date ? toIso(row.date) : toIso(row.createdAt), description: String(row.description ?? "Despesa"), amount: toNumber(row.amount), category: row.category ? String(row.category) : undefined, status: row.status ? String(row.status) : undefined }));
 }
 
+function normalizePayments(rows: Array<Record<string, unknown>>): FirebasePayment[] {
+  return rows.map((row) => ({
+    id: String(row.id),
+    type: row.type === "payable" ? "payable" : "receivable",
+    source: row.source ? String(row.source) : undefined,
+    sourceId: row.sourceId ? String(row.sourceId) : undefined,
+    description: String(row.description ?? "Lançamento financeiro"),
+    amount: toNumber(row.amount),
+    dueDate: toDateOnly(row.dueDate, row.createdAt),
+    paidAt: row.paidAt ? toIso(row.paidAt) : undefined,
+    accountId: row.accountId ? String(row.accountId) : undefined,
+    status: String(row.status ?? "pending"),
+    method: row.method ? String(row.method) : undefined,
+  }));
+}
+
+function normalizeBankAccounts(rows: Array<Record<string, unknown>>): FirebaseBankAccount[] {
+  return rows.map((row) => ({
+    id: String(row.id),
+    name: String(row.name ?? "Conta bancária"),
+    initialBalance: toNumber(row.initialBalance),
+    createdAt: toIso(row.createdAt),
+  }));
+}
+
+function normalizeBankTransactions(rows: Array<Record<string, unknown>>): FirebaseBankTransaction[] {
+  return rows.map((row) => ({
+    id: String(row.id),
+    accountId: String(row.accountId ?? ""),
+    date: toDateOnly(row.date, row.createdAt),
+    type: row.type === "withdrawal" ? "withdrawal" : "deposit",
+    amount: toNumber(row.amount),
+    description: String(row.description ?? "Lançamento manual"),
+    createdAt: toIso(row.createdAt),
+  }));
+}
+
 async function fetchData(userId: string): Promise<FirebaseData> {
-  const [products, sales, purchases, stockMovements, suppliers, expenses] = await Promise.all([
+  const [products, sales, purchases, stockMovements, suppliers, expenses, payments, bankAccounts, bankTransactions] = await Promise.all([
     listOwned<Record<string, unknown>>("products", userId),
     listOwned<Record<string, unknown>>("sales", userId),
     listOwned<Record<string, unknown>>("purchases", userId),
     listOwned<Record<string, unknown>>("stockMovements", userId),
     listOwned<Record<string, unknown>>("suppliers", userId),
     listOwned<Record<string, unknown>>("expenses", userId),
+    listOwned<Record<string, unknown>>("payments", userId),
+    listOwned<Record<string, unknown>>("bankAccounts", userId),
+    listOwned<Record<string, unknown>>("bankTransactions", userId),
   ]);
   return {
     products: normalizeProducts(products),
@@ -242,6 +321,9 @@ async function fetchData(userId: string): Promise<FirebaseData> {
     stockMovements: normalizeMovements(stockMovements).sort((a, b) => b.date.localeCompare(a.date)),
     suppliers: normalizeSuppliers(suppliers).sort((a, b) => a.name.localeCompare(b.name)),
     expenses: normalizeExpenses(expenses).sort((a, b) => b.date.localeCompare(a.date)),
+    payments: normalizePayments(payments).sort((a, b) => a.dueDate.localeCompare(b.dueDate)),
+    bankAccounts: normalizeBankAccounts(bankAccounts).sort((a, b) => a.name.localeCompare(b.name)),
+    bankTransactions: normalizeBankTransactions(bankTransactions).sort((a, b) => b.date.localeCompare(a.date)),
   };
 }
 
